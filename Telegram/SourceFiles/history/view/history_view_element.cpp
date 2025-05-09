@@ -345,6 +345,15 @@ TextSelection ShiftItemSelection(
 	return ShiftItemSelection(selection, byText.length());
 }
 
+QString DcText(int dcId) {
+	return (dcId == 1) ? "DC: 1, Miami" :
+		(dcId == 2) ? "DC: 2, Amsterdam" :
+		(dcId == 3) ? "DC: 3, Miami" :
+		(dcId == 4) ? "DC: 4, Amsterdam" :
+		(dcId == 5) ? "DC: 5, Singapore" :
+		"DC: Unknown";
+}
+
 QString DateTooltipText(not_null<Element*> view) {
 	const auto locale = QLocale();
 	const auto format = QLocale::LongFormat;
@@ -381,8 +390,21 @@ QString DateTooltipText(not_null<Element*> view) {
 				msgsigned->author);
 		}
 	}
-	if (item->isScheduled() && item->isSilent()) {
+	if (item->isSilent()) {
 		dateText += '\n' + QChar(0xD83D) + QChar(0xDD15);
+	}
+	if (const auto stars = item->out() ? item->starsPaid() : 0) {
+		dateText += '\n' + tr::lng_you_paid_stars(tr::now, lt_count, stars);
+	}
+	if (item->media() && item->media()->photo()) {
+		dateText += '\n' + QChar(0xD83D) + QChar(0xDDBC) + QChar(0xFE0F) + ' ' +
+			DcText(item->media()->photo()->_dc) + ", " +
+			locale.toString(base::unixtime::parse(item->media()->photo()->date()), format);
+	}
+	if (item->media() && item->media()->document()) {
+		dateText += '\n' + QChar(0xD83D) + QChar(0xDCC4) + ' ' +
+			DcText(item->media()->document()->_dc) + ", " +
+			locale.toString(base::unixtime::parse(item->media()->document()->date), format);
 	}
 	return dateText;
 }
@@ -472,12 +494,15 @@ void DateBadge::paint(
 	ServiceMessagePainter::PaintDate(p, st, text, width, y, w, chatWide);
 }
 
-void ServicePreMessage::init(TextWithEntities string) {
+void ServicePreMessage::init(PreparedServiceText string) {
 	text = Ui::Text::String(
 		st::serviceTextStyle,
-		string,
+		string.text,
 		kMarkupTextOptions,
 		st::msgMinWidth);
+	for (auto i = 0; i != int(string.links.size()); ++i) {
+		text.setLink(i + 1, string.links[i]);
+	}
 }
 
 int ServicePreMessage::resizeToWidth(int newWidth, bool chatWide) {
@@ -546,6 +571,27 @@ void ServicePreMessage::paint(
 
 	p.translate(0, -top);
 }
+
+ClickHandlerPtr ServicePreMessage::textState(
+		QPoint point,
+		const StateRequest &request,
+		QRect g) const {
+	const auto top = g.top() - height - st::msgMargin.top();
+	const auto rect = QRect(0, top, width, height)
+		- st::msgServiceMargin;
+	const auto trect = rect - st::msgServicePadding;
+	if (trect.contains(point)) {
+		auto textRequest = request.forText();
+		textRequest.align = style::al_center;
+		return text.getState(
+			point - trect.topLeft(),
+			trect.width(),
+			textRequest).link;
+	}
+	return {};
+}
+
+
 
 void FakeBotAboutTop::init() {
 	if (!text.isEmpty()) {
@@ -1144,10 +1190,10 @@ void Element::validateText() {
 void Element::setTextWithLinks(
 		const TextWithEntities &text,
 		const std::vector<ClickHandlerPtr> &links) {
-	const auto context = Core::MarkedTextContext{
+	const auto context = Core::TextContext({
 		.session = &history()->session(),
-		.customEmojiRepaint = [=] { customEmojiRepaint(); },
-	};
+		.repaint = [=] { customEmojiRepaint(); },
+	});
 	if (_flags & Flag::ServiceMessage) {
 		const auto &options = Ui::ItemTextServiceOptions();
 		_text.setMarkedText(st::serviceTextStyle, text, options, context);
@@ -1370,7 +1416,7 @@ void Element::recountDisplayDateInBlocks() {
 
 		if (const auto previous = previousDisplayedInBlocks()) {
 			const auto prev = previous->data();
-			return prev->isEmpty()
+			return prev->hideDisplayDate()
 				|| (previous->dateTime().date() != dateTime().date());
 		}
 		return true;
@@ -1400,6 +1446,9 @@ bool Element::countIsTopicRootReply() const {
 
 void Element::setDisplayDate(bool displayDate) {
 	const auto item = data();
+	if (item->hideDisplayDate()) {
+		displayDate = false;
+	}
 	if (displayDate && !Has<DateBadge>()) {
 		AddComponents(DateBadge::Bit());
 		Get<DateBadge>()->init(
@@ -1411,8 +1460,8 @@ void Element::setDisplayDate(bool displayDate) {
 	}
 }
 
-void Element::setServicePreMessage(TextWithEntities text) {
-	if (!text.empty()) {
+void Element::setServicePreMessage(PreparedServiceText text) {
+	if (!text.text.empty()) {
 		AddComponents(ServicePreMessage::Bit());
 		const auto service = Get<ServicePreMessage>();
 		service->init(std::move(text));
@@ -1517,14 +1566,6 @@ bool Element::hasBubble() const {
 
 bool Element::unwrapped() const {
 	return true;
-}
-
-bool Element::hasFastReply() const {
-	return false;
-}
-
-bool Element::displayFastReply() const {
-	return false;
 }
 
 std::optional<QSize> Element::rightActionSize() const {

@@ -8,7 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "overview/overview_layout.h"
 
 #include "overview/overview_layout_delegate.h"
-#include "core/ui_integration.h" // Core::MarkedTextContext.
+#include "core/ui_integration.h" // TextContext
 #include "data/data_document.h"
 #include "data/data_document_resolver.h"
 #include "data/data_session.h"
@@ -1017,7 +1017,7 @@ const style::RoundCheckbox &Voice::checkboxStyle() const {
 }
 
 void Voice::updateName() {
-	if (const auto forwarded = parent()->Get<HistoryMessageForwarded>()) {
+	if (parent()->Has<HistoryMessageForwarded>()) {
 		const auto info = parent()->originalHiddenSenderInfo();
 		const auto name = info
 			? tr::lng_forwarded(tr::now, lt_user, info->nameText().toString())
@@ -1042,10 +1042,10 @@ void Voice::updateName() {
 		st::defaultTextStyle,
 		parent()->originalText(),
 		Ui::DialogTextOptions(),
-		Core::MarkedTextContext{
+		Core::TextContext({
 			.session = &parent()->history()->session(),
-			.customEmojiRepaint = [=] { delegate()->repaintItem(this); },
-		});
+			.repaint = [=] { delegate()->repaintItem(this); },
+		}));
 }
 
 bool Voice::updateStatusText() {

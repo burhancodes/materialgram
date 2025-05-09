@@ -240,7 +240,7 @@ QByteArray Settings::serialize() const {
 		+ Serialize::stringSize(_customFontFamily)
 		+ sizeof(qint32) * 3
 		+ Serialize::bytearraySize(_tonsiteStorageToken)
-		+ sizeof(qint32) * 8;
+		+ sizeof(qint32) * 9;
 
 	auto result = QByteArray();
 	result.reserve(size);
@@ -404,7 +404,8 @@ QByteArray Settings::serialize() const {
 			<< SerializeVideoQuality(_videoQuality)
 			<< qint32(_ivZoom.current())
 			<< qint32(_systemDarkModeEnabled.current() ? 1 : 0)
-			<< qint32(_gameeEnabled.current() ? 1 : 0);
+			<< qint32(_gameeEnabled.current() ? 1 : 0)
+			<< qint32(_quickDialogAction);
 	}
 
 	Ensures(result.size() == size);
@@ -536,6 +537,7 @@ void Settings::addFromSerialized(const QByteArray &serialized) {
 	quint32 videoQuality = SerializeVideoQuality(_videoQuality);
 	quint32 chatFiltersHorizontal = _chatFiltersHorizontal.current() ? 1 : 0;
 	quint32 gameeEnabled = _gameeEnabled.current() ? 1 : 0;
+	quint32 quickDialogAction = quint32(_quickDialogAction);
 
 	stream >> themesAccentColors;
 	if (!stream.atEnd()) {
@@ -879,6 +881,9 @@ void Settings::addFromSerialized(const QByteArray &serialized) {
 	if (!stream.atEnd()) {
 		stream >> gameeEnabled;
 	}
+	if (!stream.atEnd()) {
+		stream >> quickDialogAction;
+	}
 	if (stream.status() != QDataStream::Ok) {
 		LOG(("App Error: "
 			"Bad data for Core::Settings::constructFromSerialized()"));
@@ -1103,6 +1108,7 @@ void Settings::addFromSerialized(const QByteArray &serialized) {
 	_videoQuality = DeserializeVideoQuality(videoQuality);
 	_chatFiltersHorizontal = (chatFiltersHorizontal == 1);
 	_gameeEnabled = (gameeEnabled == 1);
+	_quickDialogAction = Dialogs::Ui::QuickDialogAction(quickDialogAction);
 }
 
 QString Settings::getSoundPath(const QString &key) const {
@@ -1494,6 +1500,7 @@ void Settings::resetOnLastLogout() {
 	_recordVideoMessages = false;
 	_videoQuality = {};
 	_chatFiltersHorizontal = false;
+	_quickDialogAction = Dialogs::Ui::QuickDialogAction::Disabled;
 
 	_recentEmojiPreload.clear();
 	_recentEmoji.clear();
@@ -1679,6 +1686,14 @@ rpl::producer<bool> Settings::chatFiltersHorizontalChanges() const {
 
 void Settings::setChatFiltersHorizontal(bool value) {
 	_chatFiltersHorizontal = value;
+}
+
+Dialogs::Ui::QuickDialogAction Settings::quickDialogAction() const {
+	return _quickDialogAction;
+}
+
+void Settings::setQuickDialogAction(Dialogs::Ui::QuickDialogAction action) {
+	_quickDialogAction = action;
 }
 
 } // namespace Core

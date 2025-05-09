@@ -59,9 +59,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "core/application.h"
 #include "core/core_settings.h"
-#include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 #include "styles/style_chat_helpers.h"
+#include "styles/style_layers.h"
 
 #include <QtCore/QMimeData>
 
@@ -145,6 +145,10 @@ void EditPriceBox(
 		field->resize(width, field->height());
 		wrap->resize(width, field->height());
 	}, wrap->lifetime());
+	field->paintRequest() | rpl::start_with_next([=](QRect clip) {
+		auto p = QPainter(field);
+		st::paidStarIcon.paint(p, 0, st::paidStarIconTop, field->width());
+	}, field->lifetime());
 	field->selectAll();
 	box->setFocusCallback([=] {
 		field->setFocusFast();
@@ -164,11 +168,6 @@ void EditPriceBox(
 			tr::lng_paid_about_link_url(tr::now));
 		return false;
 	});
-
-	field->paintRequest() | rpl::start_with_next([=](QRect clip) {
-		auto p = QPainter(field);
-		st::paidStarIcon.paint(p, 0, st::paidStarIconTop, field->width());
-	}, field->lifetime());
 
 	const auto save = [=] {
 		const auto now = field->getLastText().toULongLong();
@@ -715,6 +714,18 @@ void SendFilesBox::openDialogToAddFileToAlbum() {
 		crl::guard(this, callback));
 }
 
+void SendFilesBox::refreshMessagesCount() {
+	const auto way = _sendWay.current();
+	const auto withCaption = _list.canAddCaption(
+		way.groupFiles() && way.sendImagesAsPhotos(),
+		way.sendImagesAsPhotos());
+	const auto withComment = !withCaption
+		&& _caption
+		&& !_caption->isHidden()
+		&& !_caption->getTextWithTags().text.isEmpty();
+	_messagesCount = _list.files.size() + (withComment ? 1 : 0);
+}
+
 void SendFilesBox::refreshButtons() {
 	clearButtons();
 
@@ -723,6 +734,15 @@ void SendFilesBox::refreshButtons() {
 			? tr::lng_send_button()
 			: tr::lng_create_group_next()),
 		[=] { send({}); });
+	refreshMessagesCount();
+
+	const auto perMessage = _captionToPeer
+		? _captionToPeer->starsPerMessageChecked()
+		: 0;
+	if (perMessage > 0) {
+		_send->setText(PaidSendButtonText(_messagesCount.value(
+		) | rpl::map(rpl::mappers::_1 * perMessage)));
+	}
 	if (_sendType == Api::SendType::Normal) {
 		SendMenu::SetupMenuAndShortcuts(
 			_send,
@@ -839,10 +859,9 @@ void SendFilesBox::refreshPriceTag() {
 			QString(),
 			st::paidTagLabel);
 		std::move(text) | rpl::start_with_next([=](TextWithEntities &&text) {
-			label->setMarkedText(text, Core::MarkedTextContext{
+			label->setMarkedText(text, Core::TextContext({
 				.session = session,
-				.customEmojiRepaint = [=] { label->update(); },
-			});
+			}));
 		}, label->lifetime());
 		label->show();
 		label->sizeValue() | rpl::start_with_next([=](QSize size) {
@@ -1452,6 +1471,7 @@ void SendFilesBox::setupCaption() {
 		_caption->changes()
 	) | rpl::start_with_next([=] {
 		checkCharsLimitation();
+		refreshMessagesCount();
 	}, _caption->lifetime());
 }
 

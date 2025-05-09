@@ -581,6 +581,8 @@ bool AddRescheduleAction(
 		const auto peer = firstItem->history()->peer;
 		const auto sendMenuType = !peer
 			? SendMenu::Type::Disabled
+			: peer->starsPerMessageChecked()
+			? SendMenu::Type::SilentOnly
 			: peer->isSelf()
 			? SendMenu::Type::Reminder
 			: HistoryView::CanScheduleUntilOnline(peer)
@@ -1438,11 +1440,11 @@ void AddSaveSoundForNotifications(
 		return;
 	} else if (int(ringtones.list().size()) >= ringtones.maxSavedCount()) {
 		return;
-	} else if (const auto song = document->song()) {
+	} else if (document->song()) {
 		if (document->duration() > ringtones.maxDuration()) {
 			return;
 		}
-	} else if (const auto voice = document->voice()) {
+	} else if (document->voice()) {
 		if (document->duration() > ringtones.maxDuration()) {
 			return;
 		}
